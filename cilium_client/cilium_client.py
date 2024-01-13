@@ -26,13 +26,13 @@ class CiliumClient:
     def get_hosts(self) -> list:
         return self.config["hosts"]
 
-    def get_endpoints(self, host: str = None) -> dict:
+    def get_endpoints_raw_json(self, host: str = None) -> dict:
         host = host or self.config["hosts"][0]
         endpoint_url = f"http://{host}:{self.config['port']}/endpoints"
         response = requests.get(endpoint_url)
         return response.json()
 
-    def get_services(self, host: str = None) -> dict:
+    def get_services_raw_json(self, host: str = None) -> dict:
         host = host or self.config["hosts"][0]
         services_url = f"http://{host}:{self.config['port']}/services"
         response = requests.get(services_url)
