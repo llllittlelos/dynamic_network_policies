@@ -4,15 +4,16 @@ import pathlib
 import yaml
 
 
-class MicroserviceYamlHandler:
+class MicroservicesYamlHandler:
+    microservices_yaml_contents = []
     def __init__(self, microservices_name: str):
         self.microservices_name = microservices_name
         self.microservices_yaml_path = (pathlib.Path(__file__).parent.resolve()
                                         / f"../microservices-yaml/{self.microservices_name}")
-        self.microservices_yaml_files = self.get_microservice_yaml_files(self)
+        self.microservices_yaml_files = self.get_microservices_yaml_files(self)
 
     @staticmethod
-    def get_microservice_yaml_files(self) -> list:
+    def get_microservices_yaml_files(self) -> list:
         yaml_files = list(self.microservices_yaml_path.rglob("*.yaml"))
         yml_files = list(self.microservices_yaml_path.rglob("*.yml"))
         yaml_files.extend(yml_files)
@@ -28,7 +29,7 @@ class MicroserviceYamlHandler:
                     yaml_content = yaml.load_all(file, Loader=yaml.Loader)
                     yaml_contents.append(list(yaml_content))
                 except yaml.YAMLError as e:
-                    print(f"Error: {e} while reading YAML file:", yaml_file)
+                    print(f"error: {e} while reading YAML file:", yaml_file)
 
         return yaml_contents
 
