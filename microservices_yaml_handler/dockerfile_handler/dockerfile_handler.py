@@ -150,12 +150,13 @@ token = get_docker_hub_token(auth_info["username"], auth_info["password"])
 
 class DockerfileHandler:
     def __init__(self, microservices_name: str, force=False):
+        current_dir = pathlib.Path(__file__).parent.resolve()
         self.microservices_name = microservices_name
-        self.microservices_yaml_path = (pathlib.Path(__file__).parent.resolve()
-                                        / f"../../microservices-yaml/{self.microservices_name}")
+        self.microservices_yaml_path = current_dir / f"../../microservices-yaml/{self.microservices_name}"
         self.microservices_dockerfiles = self.fetch_microservices_dockerfiles(self)
-        if force is not True and pathlib.Path("../../output/dockerfile_handler_result.yaml").exists():
-            with open("../../output/dockerfile_handler_result.yaml", "r") as file:
+        result_yaml = current_dir / "../../output/dockerfile_handler_result.yaml"
+        if force is not True and pathlib.Path(result_yaml).exists():
+            with open(result_yaml, "r") as file:
                 self.microservices_docker_cve_data = yaml.load(file, Loader=yaml.Loader)
         else:
             self.microservices_docker_cve_data = self.generate_docker_cve_data(self)
@@ -178,30 +179,33 @@ class DockerfileHandler:
             docker_name = str(dockerfile.parent.name)
             with open(dockerfile, 'r') as f:
                 dockerfile_content = f.read()
-            try:
-                dockerfile_items = dockerfile_content.split("\n")
-                for dockerfile_item in dockerfile_items:
-                    if dockerfile_item.startswith("FROM"):
-                        docker_cve_data[docker_name] = {}
-                        base_image = dockerfile_item.split(" ")[1]
-                        if len(base_image.split("/")) > 1:
-                            base_image = base_image.split("/")[-1]
-                        image_name = base_image.split(":")[0]
-                        tag = base_image.split(":")[1]
 
-                        docker_cve_data[docker_name]["base image name"] = image_name
-                        docker_cve_data[docker_name]["tag"] = tag
+            dockerfile_items = dockerfile_content.split("\n")
+            for dockerfile_item in dockerfile_items:
+                if dockerfile_item.startswith("FROM"):
+                    docker_cve_data[docker_name] = {}
+                    base_image = dockerfile_item.split(" ")[1]
+                    if len(base_image.split("/")) > 1:
+                        base_image = base_image.split("/")[-1]
+                    image_name = base_image.split(":")[0]
+                    tag = base_image.split(":")[1]
 
+                    docker_cve_data[docker_name]["baseImageName"] = image_name
+                    docker_cve_data[docker_name]["tag"] = tag
+                    try:
                         image_digest_json = get_image_digest_json(image_name, tag, token)
+                    except Exception as e:
+                        print(f"error: {e} while getting digest of dockerfile:", dockerfile)
+                        exit(1)
 
-                        if image_digest_json is not None:
-                            digest_data = parse_image_digest(image_digest_json)
-                            docker_cve_data[docker_name]["digest"] = digest_data
-                            docker_cve_data[docker_name]["vuln"] = get_needed_vuln_by_digest(digest_data)
-
-            except Exception as e:
-                print(f"error: {e} while reading dockerfile:", dockerfile)
-                exit(1)
+                    if image_digest_json is not None:
+                        digest_data = parse_image_digest(image_digest_json)
+                        docker_cve_data[docker_name]["digest"] = digest_data
+                        try:
+                            docker_cve_data[docker_name]["vulnerabilities"] = get_needed_vuln_by_digest(digest_data)
+                        except Exception as e:
+                            print(f"error: {e} while getting cve data of dockerfile:", dockerfile)
+                            exit(1)
 
         return docker_cve_data
 
@@ -212,7 +216,9 @@ class DockerfileHandler:
             with open(file_name, "w") as file:
                 yaml.dump(self.microservices_docker_cve_data, file, default_flow_style=False)
 
-    def get_image_info_by_name(self, image_name: str):
+    def get_image_info_by_image_name(self, image_name: str):
         for item in self.microservices_docker_cve_data:
-            for key, _ in item.items():
-                print(key)
+            if str(item) in image_name:
+                return self.microservices_docker_cve_data[item]
+
+        return None
