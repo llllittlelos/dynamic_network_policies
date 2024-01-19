@@ -149,12 +149,14 @@ token = get_docker_hub_token(auth_info["username"], auth_info["password"])
 
 
 class DockerfileHandler:
+    output_yaml_file_name = "dockerfile_handler_result.yaml"
+
     def __init__(self, microservices_name: str, force=False):
         current_dir = pathlib.Path(__file__).parent.resolve()
         self.microservices_name = microservices_name
         self.microservices_yaml_path = current_dir / f"../../microservices-yaml/{self.microservices_name}"
         self.microservices_dockerfiles = self.fetch_microservices_dockerfiles(self)
-        result_yaml = current_dir / "../../output/dockerfile_handler_result.yaml"
+        result_yaml = current_dir / f"../../output/{self.output_yaml_file_name}"
         if force is not True and pathlib.Path(result_yaml).exists():
             with open(result_yaml, "r") as file:
                 self.microservices_docker_cve_data = yaml.load(file, Loader=yaml.Loader)
@@ -210,10 +212,11 @@ class DockerfileHandler:
         return docker_cve_data
 
     @staticmethod
-    def write_to_yaml_file(self, file_name: str = None):
-        file_name = file_name or "dockerfile_handler_result.yaml"
+    def write_to_yaml_file(self):
+        current_dir = pathlib.Path(__file__).parent.resolve()
+        result_yaml = current_dir / f"../../output/{self.output_yaml_file_name}"
         if self.microservices_docker_cve_data is not None:
-            with open(file_name, "w") as file:
+            with open(result_yaml, "w") as file:
                 yaml.dump(self.microservices_docker_cve_data, file, default_flow_style=False)
 
     def get_image_info_by_image_name(self, image_name: str):
