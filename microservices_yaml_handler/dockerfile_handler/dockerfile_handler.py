@@ -98,9 +98,13 @@ def get_image_digest_json(image_name, tag, _token):
 def get_package_urls(digest):
     data = copy.deepcopy(DSO_GET_PACKAGES_PAYLOAD)
     data["variables"]["digest"] = digest
-    response = requests.post(DSO_GRAPH_API, headers={"accept": "application/json", "content-type": "application/json"},
-                             data=json.dumps(data))
-
+    try:
+        response = requests.post(DSO_GRAPH_API,
+                                 headers={"accept": "application/json", "content-type": "application/json"},
+                                 data=json.dumps(data))
+    except requests.exceptions.HTTPError as e:
+        print(f"error: {e} while getting package urls")
+        exit(1)
     response_body = response.json()
     package_list = response_body["data"]["imagePackagesByDigest"]["imagePackages"]["packages"]
     _package_urls = list(map(lambda p: p["package"]["purl"], package_list))
@@ -111,8 +115,13 @@ def get_package_urls(digest):
 def get_vuln_by_package_urls(_package_urls):
     data = copy.deepcopy(DSO_GET_VULN_PAYLOAD)
     data["variables"]["packageUrls"] = _package_urls
-    response = requests.post(DSO_GRAPH_API, headers={"accept": "application/json", "content-type": "application/json"},
-                             data=json.dumps(data))
+    try:
+        response = requests.post(DSO_GRAPH_API,
+                                 headers={"accept": "application/json", "content-type": "application/json"},
+                                 data=json.dumps(data))
+    except requests.exceptions.HTTPError as e:
+        print(f"error: {e} while getting vuln by package urls")
+        exit(1)
     return response.json()
 
 
@@ -166,7 +175,7 @@ class DockerfileHandler:
     def generate_docker_cve_data(self) -> dict:
         docker_cve_data = {}
         for dockerfile in self.microservices_dockerfiles:
-            docker_name = self.microservices_name + "-" + str(dockerfile.parent.name)
+            docker_name = str(dockerfile.parent.name)
             with open(dockerfile, 'r') as f:
                 dockerfile_content = f.read()
             try:
@@ -202,3 +211,8 @@ class DockerfileHandler:
         if self.microservices_docker_cve_data is not None:
             with open(file_name, "w") as file:
                 yaml.dump(self.microservices_docker_cve_data, file, default_flow_style=False)
+
+    def get_image_info_by_name(self, image_name: str):
+        for item in self.microservices_docker_cve_data:
+            for key, _ in item.items():
+                print(key)
