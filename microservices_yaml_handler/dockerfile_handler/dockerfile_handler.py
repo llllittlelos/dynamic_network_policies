@@ -1,8 +1,40 @@
 # microservices_yaml_handler/dockerfile_handler/dockerfile_handler.py
 
+import copy
+import json
 import pathlib
 import requests
+import yaml
 from configparser import ConfigParser
+
+DSO_GRAPH_API = "https://api.dso.docker.com/v1/graphql"
+
+DSO_GET_PACKAGES_PAYLOAD = \
+    {
+        'query': 'query web_ImagePackagesByDigest($digest: String!, $context: Context!)\n{\n  imagePackagesByDigest('
+                 'context: $context, digest: $digest) {\n    digest\n    imageLayers {\n      layers {\n        '
+                 'diffId\n        ordinal\n      }\n    }\n    imagePackages {\n      packages {\n        package {\n '
+                 '         purl\n        }\n        locations {\n          diffId\n          path\n        }\n      '
+                 '}\n    }\n  }\n}\n',
+        'variables': {
+            'digest': 'sha256:abc',
+            'context': {},
+        },
+    }
+
+DSO_GET_VULN_PAYLOAD = \
+    {
+        "query": "\nquery web_VulnerabilitiesByPackage($packageUrls: [String!]!, $context: Context!) {\n  "
+                 "vulnerabilitiesByPackage(context: $context, packageUrls: $packageUrls) {\n    purl\n    "
+                 "vulnerabilities"
+                 "{\n      cvss {\n        score\n        severity\n      }\n      cwes {\n        cweId\n        "
+                 "description\n      }\n      description\n      fixedBy\n      publishedAt\n      source\n      "
+                 "sourceId\n      vulnerableRange\n    }\n  }\n}\n",
+        "variables": {
+            "packageUrls": [],
+            "context": {}
+        }
+    }
 
 
 def read_config(config_file) -> dict:
@@ -32,6 +64,21 @@ def get_docker_hub_token(username, password):
     return docker_hub_token
 
 
+def parse_image_digest(image_digest_json):
+    if image_digest_json is None:
+        return None
+    try:
+        images_infos = image_digest_json["images"]
+        for images_info in images_infos:
+            if images_info["architecture"] == "amd64":
+                return images_info["digest"]
+    except Exception as e:
+        print(f"error: {e} while parsing image digest")
+        exit(1)
+
+    return None
+
+
 def get_image_digest_json(image_name, tag, _token):
     registry_url = "https://hub.docker.com/v2/repositories/library/"
     image_url = registry_url + f"{image_name}/tags/{tag}"
@@ -48,34 +95,44 @@ def get_image_digest_json(image_name, tag, _token):
         return None
 
 
-def get_image_vuln_by_digest(image_name, digest):
-    database_url = "https://dso.docker.com/images/"
-    image_url = database_url + f"{image_name}/digest/{digest}"
-    try:
-        response = requests.get(image_url)
-    except requests.exceptions.HTTPError as e:
-        print(f"error: {e} while getting image vuln by digest")
-        exit(1)
+def get_package_urls(digest):
+    data = copy.deepcopy(DSO_GET_PACKAGES_PAYLOAD)
+    data["variables"]["digest"] = digest
+    response = requests.post(DSO_GRAPH_API, headers={"accept": "application/json", "content-type": "application/json"},
+                             data=json.dumps(data))
 
-    if response.status_code == 200:
-        return response.content
-    else:
+    response_body = response.json()
+    package_list = response_body["data"]["imagePackagesByDigest"]["imagePackages"]["packages"]
+    _package_urls = list(map(lambda p: p["package"]["purl"], package_list))
+
+    return _package_urls
+
+
+def get_vuln_by_package_urls(_package_urls):
+    data = copy.deepcopy(DSO_GET_VULN_PAYLOAD)
+    data["variables"]["packageUrls"] = _package_urls
+    response = requests.post(DSO_GRAPH_API, headers={"accept": "application/json", "content-type": "application/json"},
+                             data=json.dumps(data))
+    return response.json()
+
+
+def get_needed_vuln_by_response(response_json):
+    cve_datas = []
+    if response_json is None:
         return None
+    if response_json["data"] is not None and response_json["data"]["vulnerabilitiesByPackage"] is not None:
+        for item in response_json["data"]["vulnerabilitiesByPackage"]:
+            if item["vulnerabilities"] is not None:
+                for vuln in item["vulnerabilities"]:
+                    needed_vuln = {"cveId": vuln["sourceId"], "cvss": vuln["cvss"]}
+                    cve_datas.append(needed_vuln)
+        return cve_datas
 
 
-def parse_image_digest(image_digest_json):
-    if image_digest_json is None:
-        return None
-    try:
-        images_infos = image_digest_json["images"]
-        for images_info in images_infos:
-            if images_info["architecture"] == "amd64":
-                return images_info["digest"]
-    except Exception as e:
-        print(f"error: {e} while parsing image digest")
-        exit(1)
-
-    return None
+def get_needed_vuln_by_digest(digest):
+    package_urls = get_package_urls(digest)
+    response_json = get_vuln_by_package_urls(package_urls)
+    return get_needed_vuln_by_response(response_json)
 
 
 auth_info = read_config(pathlib.Path(__file__).parent.resolve() / "../../config.ini")
@@ -83,12 +140,17 @@ token = get_docker_hub_token(auth_info["username"], auth_info["password"])
 
 
 class DockerfileHandler:
-    def __init__(self, microservices_name: str):
+    def __init__(self, microservices_name: str, force=False):
         self.microservices_name = microservices_name
         self.microservices_yaml_path = (pathlib.Path(__file__).parent.resolve()
                                         / f"../../microservices-yaml/{self.microservices_name}")
         self.microservices_dockerfiles = self.fetch_microservices_dockerfiles(self)
-        self.microservices_docker_cve_data = self.generate_docker_cve_data(self)
+        if force is not True and pathlib.Path("../../output/dockerfile_handler_result.yaml").exists():
+            with open("../../output/dockerfile_handler_result.yaml", "r") as file:
+                self.microservices_docker_cve_data = yaml.load(file, Loader=yaml.Loader)
+        else:
+            self.microservices_docker_cve_data = self.generate_docker_cve_data(self)
+            self.write_to_yaml_file(self)
 
     @staticmethod
     def fetch_microservices_dockerfiles(self) -> list:
@@ -104,7 +166,7 @@ class DockerfileHandler:
     def generate_docker_cve_data(self) -> dict:
         docker_cve_data = {}
         for dockerfile in self.microservices_dockerfiles:
-            docker_name = str(dockerfile.parent.name)
+            docker_name = self.microservices_name + "-" + str(dockerfile.parent.name)
             with open(dockerfile, 'r') as f:
                 dockerfile_content = f.read()
             try:
@@ -118,14 +180,15 @@ class DockerfileHandler:
                         image_name = base_image.split(":")[0]
                         tag = base_image.split(":")[1]
 
-                        docker_cve_data[docker_name]["image name"] = image_name
+                        docker_cve_data[docker_name]["base image name"] = image_name
                         docker_cve_data[docker_name]["tag"] = tag
 
                         image_digest_json = get_image_digest_json(image_name, tag, token)
 
                         if image_digest_json is not None:
-                            docker_cve_data[docker_name]["digest"] = parse_image_digest(image_digest_json)
-                            # print(get_image_vuln_by_digest(image_name, docker_cve_data[docker_name]["digest"]))
+                            digest_data = parse_image_digest(image_digest_json)
+                            docker_cve_data[docker_name]["digest"] = digest_data
+                            docker_cve_data[docker_name]["vuln"] = get_needed_vuln_by_digest(digest_data)
 
             except Exception as e:
                 print(f"error: {e} while reading dockerfile:", dockerfile)
@@ -133,10 +196,9 @@ class DockerfileHandler:
 
         return docker_cve_data
 
-
-if __name__ == '__main__':
-    print(get_image_vuln_by_digest("mysql", "sha256:f90d1aeb92a5c7b3a4178a3052d8bc27b1f52a811aacb27b619c10b778b9f281"))
-    # microservices = ("bookinfo", "online boutique", "sock shop")
-    # microservice_name: str = microservices[0]
-    # dockerfile_handler = DockerfileHandler(microservice_name)
-    # print(dockerfile_handler.microservices_docker_cve_data)
+    @staticmethod
+    def write_to_yaml_file(self, file_name: str = None):
+        file_name = file_name or "dockerfile_handler_result.yaml"
+        if self.microservices_docker_cve_data is not None:
+            with open(file_name, "w") as file:
+                yaml.dump(self.microservices_docker_cve_data, file, default_flow_style=False)
