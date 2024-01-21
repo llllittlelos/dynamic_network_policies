@@ -144,10 +144,6 @@ def get_needed_vuln_by_digest(digest):
     return get_needed_vuln_by_response(response_json)
 
 
-auth_info = read_config(pathlib.Path(__file__).parent.resolve() / "../../config.ini")
-token = get_docker_hub_token(auth_info["username"], auth_info["password"])
-
-
 class DockerfileHandler:
     output_yaml_file_name = "dockerfile_handler_result.yaml"
 
@@ -156,11 +152,13 @@ class DockerfileHandler:
         self.microservices_name = microservices_name
         self.microservices_yaml_path = current_dir / f"../../microservices-yaml/{self.microservices_name}"
         self.microservices_dockerfiles = self.fetch_microservices_dockerfiles(self)
-        result_yaml = current_dir / f"../../output/{self.output_yaml_file_name}"
-        if force is not True and pathlib.Path(result_yaml).exists():
-            with open(result_yaml, "r") as file:
+        self.result_yaml = current_dir / f"../../output/{self.microservices_name}/{self.output_yaml_file_name}"
+        if force is not True and pathlib.Path(self.result_yaml).exists():
+            with open(self.result_yaml, "r") as file:
                 self.microservices_docker_cve_data = yaml.load(file, Loader=yaml.Loader)
         else:
+            auth_info = read_config(pathlib.Path(__file__).parent.resolve() / "../../config.ini")
+            self.token = get_docker_hub_token(auth_info["username"], auth_info["password"])
             self.microservices_docker_cve_data = self.generate_docker_cve_data(self)
             self.write_to_yaml_file(self)
 
@@ -195,7 +193,7 @@ class DockerfileHandler:
                     docker_cve_data[docker_name]["baseImageName"] = image_name
                     docker_cve_data[docker_name]["tag"] = tag
                     try:
-                        image_digest_json = get_image_digest_json(image_name, tag, token)
+                        image_digest_json = get_image_digest_json(image_name, tag, self.token)
                     except Exception as e:
                         print(f"error: {e} while getting digest of dockerfile:", dockerfile)
                         exit(1)
@@ -213,10 +211,8 @@ class DockerfileHandler:
 
     @staticmethod
     def write_to_yaml_file(self):
-        current_dir = pathlib.Path(__file__).parent.resolve()
-        result_yaml = current_dir / f"../../output/{self.output_yaml_file_name}"
         if self.microservices_docker_cve_data is not None:
-            with open(result_yaml, "w") as file:
+            with open(self.result_yaml, "w") as file:
                 yaml.dump(self.microservices_docker_cve_data, file, default_flow_style=False)
 
     def get_image_info_by_image_name(self, image_name: str):
