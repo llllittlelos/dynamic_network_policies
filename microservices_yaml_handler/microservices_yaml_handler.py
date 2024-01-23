@@ -88,18 +88,18 @@ class MicroservicesYamlHandler:
         return yaml_contents
 
     def enrich_containers(self):
-        for yaml_item in self.microservices_yaml_contents:
-            if yaml_item is None:
+        for yaml_content in self.microservices_yaml_contents:
+            if yaml_content is None:
                 continue
-            if "spec" not in yaml_item:
+            if "spec" not in yaml_content:
                 continue
-            if "template" not in yaml_item["spec"]:
+            if "template" not in yaml_content["spec"]:
                 continue
-            if "spec" not in yaml_item["spec"]["template"]:
+            if "spec" not in yaml_content["spec"]["template"]:
                 continue
-            for spec_item in yaml_item["spec"]["template"]["spec"]:
+            for spec_item in yaml_content["spec"]["template"]["spec"]:
                 if spec_item == "containers" or spec_item == "initContainers":
-                    for container_item in yaml_item["spec"]["template"]["spec"][spec_item]:
+                    for container_item in yaml_content["spec"]["template"]["spec"][spec_item]:
                         if "image" in container_item:
                             image = container_item["image"]
                             image_search_name = image.split("/")[-1]
@@ -107,7 +107,7 @@ class MicroservicesYamlHandler:
                                           get_image_info_by_image_name(image_search_name))
                             if image_info is not None:
                                 container_item["imageInfo"] = image_info
-                                yaml_item[self.score_types.container_score] = len(image_info["vulnerabilities"])
+                                yaml_content[self.score_types.container_score] = len(image_info["vulnerabilities"])
                         if "securityContext" in container_item:
                             security_context = container_item["securityContext"]
                             security_context_score = 0
@@ -138,53 +138,62 @@ class MicroservicesYamlHandler:
                             else:
                                 security_context_score += 100
 
-                            yaml_item[self.score_types.security_context_score] = security_context_score
+                            yaml_content[self.score_types.security_context_score] = security_context_score
 
                         if "volumeMounts" in container_item:
                             volume_mounts = container_item["volumeMounts"]
-                            yaml_item[self.score_types.volume_score] = 10 * len(volume_mounts)
+                            yaml_content[self.score_types.volume_score] = 10 * len(volume_mounts)
 
     def enrich_services(self):
         accessibility_rules = ("ClusterIP", "NodePort", "LoadBalancer", "ExternalName")
         accessibility_kind = "Ingress"
-        for yaml_item in self.microservices_yaml_contents:
-            if yaml_item["kind"] == accessibility_kind:
-                yaml_item[self.score_types.access_score] = 100
+        for yaml_content in self.microservices_yaml_contents:
+            if yaml_content["kind"] == accessibility_kind:
+                yaml_content[self.score_types.access_score] = 100
                 continue
-            if yaml_item is None:
+            if yaml_content is None:
                 continue
-            if "spec" not in yaml_item:
+            if "spec" not in yaml_content:
                 continue
-            if "type" not in yaml_item["spec"]:
+            if "type" not in yaml_content["spec"]:
                 continue
-            if yaml_item["spec"]["type"] in accessibility_rules:
-                yaml_item[self.score_types.access_score] = 100
+            if yaml_content["spec"]["type"] in accessibility_rules:
+                yaml_content[self.score_types.access_score] = 100
                 continue
 
     def enrich_pod(self):
         pod_rules = ("hostPID", "hostNetwork")
         affinity_rules = ("nodeAffinity", "podAffinity")
-        for yaml_item in self.microservices_yaml_contents:
-            if yaml_item["kind"] != "Pod":
+        for yaml_content in self.microservices_yaml_contents:
+            if yaml_content["kind"] != "Pod":
                 continue
-            if "spec" in yaml_item and yaml_item["spec"] is not None:
+            if "spec" in yaml_content and yaml_content["spec"] is not None:
                 pod_score = 0
                 for pod_rule in pod_rules:
-                    if pod_rule in yaml_item["spec"]:
-                        if yaml_item["spec"][pod_rule]:
+                    if pod_rule in yaml_content["spec"]:
+                        if yaml_content["spec"][pod_rule]:
                             pod_score += 100
 
                 for affinity_rule in affinity_rules:
-                    if affinity_rule in yaml_item["spec"]:
-                        if yaml_item["spec"][affinity_rule]:
+                    if affinity_rule in yaml_content["spec"]:
+                        if yaml_content["spec"][affinity_rule]:
                             pod_score += 0.4
 
-                yaml_item[self.score_types.pod_score] = pod_score
+                yaml_content[self.score_types.pod_score] = pod_score
+
+    def calculate_global_score(self):
+        for yaml_content in self.microservices_yaml_contents:
+            if yaml_content is None:
+                continue
+            global_score = 0
+            for item in self.score_types:
+                global_score += yaml_content[item]
+            yaml_content[self.score_types.global_score] = global_score
 
     def get_all_kinds(self) -> list:
         kinds = set()
-        for yaml_item in self.microservices_yaml_contents:
-            if yaml_item is not None and "kind" in yaml_item:
-                kinds.add(yaml_item["kind"])
+        for yaml_content in self.microservices_yaml_contents:
+            if yaml_content is not None and "kind" in yaml_content:
+                kinds.add(yaml_content["kind"])
 
         return list(kinds)
