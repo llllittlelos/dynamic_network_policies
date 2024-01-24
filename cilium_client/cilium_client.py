@@ -94,14 +94,25 @@ class CiliumClient:
 
         return cilium_client_data
 
-    def get_all_endpoints(self):
-        endpoints = {}
-        for host in self.config["hosts"]:
-            endpoints[host] = self.get_endpoints_raw_json(host)
-        return endpoints
+    def get_service_items_by_namespace(self, namespace: str) -> list:
+        service_items = []
+        for host in self.microservices_cilium_client_data:
+            for service_spec_item in self.microservices_cilium_client_data[host]["services"]:
+                if service_spec_item["spec"]["flags"]["namespace"] == namespace:
+                    service_spec_item["spec"].pop("id")
+                    service_spec_item["status"]["realized"].pop("id")
+                    if service_spec_item not in service_items:
+                        service_items.append(service_spec_item)
 
-    def get_all_services(self):
-        services = {}
-        for host in self.config["hosts"]:
-            services[host] = self.get_services_raw_json(host)
-        return services
+        return service_items
+
+    def get_endpoint_items_by_namespace(self, namespace: str) -> list:
+        endpoint_items = []
+        for host in self.microservices_cilium_client_data:
+            for endpoint_spec_item in self.microservices_cilium_client_data[host]["endpoints"]:
+                if "k8s-namespace" in endpoint_spec_item["status"]["external-identifiers"]:
+                    if endpoint_spec_item["status"]["external-identifiers"]["k8s-namespace"] == namespace:
+                        if endpoint_spec_item not in endpoint_items:
+                            endpoint_items.append(endpoint_spec_item)
+
+        return endpoint_items

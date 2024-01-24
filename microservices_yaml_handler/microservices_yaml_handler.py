@@ -7,7 +7,7 @@ from microservices_yaml_handler.dockerfile_handler import DockerfileHandler
 
 
 class MicroservicesYamlHandler:
-    # TODO: 这只是常规安全检查，L7的网络策略需要获取HTTP有关的配置文件
+    # TODO: 这只是常规安全检查，L7的网络策略需要获取HTTP有关的配置文件，个人感觉这里也获取了一部分的HTTP有关的配置文件
     needed_yaml_kind = ("Pod", "Deployment", "DaemonSet", "ReplicaSet", "Namespace", "Service", "ServiceAccount",
                         "Role", "ClusterRole", "RoleBinding", "ClusterRoleBinding", "Secret", "PersistentVolume",
                         "Ingress")
@@ -19,8 +19,9 @@ class MicroservicesYamlHandler:
                              security_context_score="securityContextScore", access_score="accessScore",
                              pod_score="podScore", volume_score="volumeScore")
 
-    def __init__(self, microservices_name: str, force=False):
+    def __init__(self, microservices_name: str, exclusions_list: list, force=False):
         self.microservices_name = microservices_name
+        self.exclusions_list = exclusions_list
         self.microservices_yaml_path = (pathlib.Path(__file__).parent.resolve()
                                         / f"../microservices-yaml/{self.microservices_name}")
         self.microservices_yaml_files = self.fetch_microservices_yaml_files(self)
@@ -74,6 +75,8 @@ class MicroservicesYamlHandler:
         yaml_contents = []
         yaml_files = self.microservices_yaml_files
         for yaml_file in yaml_files:
+            if str(yaml_file).split("\\")[-1] in self.exclusions_list:
+                continue
             with open(yaml_file, "r") as file:
                 try:
                     yaml_content = yaml.load_all(file, Loader=yaml.Loader)
@@ -83,7 +86,9 @@ class MicroservicesYamlHandler:
 
                 filtered_yaml_content = self.__filter_yaml_content(self, list(yaml_content))
                 if len(filtered_yaml_content) > 0:
-                    yaml_contents.extend(filtered_yaml_content)
+                    for item in filtered_yaml_content:
+                        if item not in yaml_contents:
+                            yaml_contents.append(item)
 
         return yaml_contents
 
@@ -197,3 +202,52 @@ class MicroservicesYamlHandler:
                 kinds.add(yaml_content["kind"])
 
         return list(kinds)
+
+    def get_all_pods_names(self) -> list:
+        pods_names = set()
+        for yaml_content in self.microservices_yaml_contents:
+            if yaml_content is not None and "kind" in yaml_content and yaml_content["kind"] == "Deployment":
+                pods_names.add(yaml_content["metadata"]["name"])
+
+        return list(pods_names)
+
+    def get_all_containers_names(self) -> list:
+        containers_names = set()
+        for yaml_content in self.microservices_yaml_contents:
+            if yaml_content is None:
+                continue
+            if "spec" not in yaml_content:
+                continue
+            if "template" not in yaml_content["spec"]:
+                continue
+            if "spec" not in yaml_content["spec"]["template"]:
+                continue
+            for spec_item in yaml_content["spec"]["template"]["spec"]:
+                if spec_item == "containers" or spec_item == "initContainers":
+                    for container_item in yaml_content["spec"]["template"]["spec"][spec_item]:
+                        if "image" in container_item:
+                            containers_names.add(container_item["image"])
+
+        return list(containers_names)
+
+    def get_container_info_by_pod_name(self, pod_name: str):
+        container_infos = []
+        for yaml_content in self.microservices_yaml_contents:
+            if yaml_content is None:
+                continue
+            if yaml_content["kind"] != "Deployment":
+                continue
+            if "spec" not in yaml_content:
+                continue
+            if "template" not in yaml_content["spec"]:
+                continue
+            if "spec" not in yaml_content["spec"]["template"]:
+                continue
+            if "containers" in yaml_content["spec"]["template"]["spec"]:
+                if yaml_content["metadata"]["name"] in pod_name:
+                    container_infos.append(yaml_content["spec"]["template"]["spec"]["containers"])
+            if "initContainers" in yaml_content["spec"]["template"]["spec"]:
+                if yaml_content["metadata"]["name"] in pod_name:
+                    container_infos.append(yaml_content["spec"]["template"]["spec"]["initContainers"])
+
+        return container_infos
