@@ -99,8 +99,10 @@ class CiliumClient:
         for host in self.microservices_cilium_client_data:
             for service_spec_item in self.microservices_cilium_client_data[host]["services"]:
                 if service_spec_item["spec"]["flags"]["namespace"] == namespace:
-                    service_spec_item["spec"].pop("id")
-                    service_spec_item["status"]["realized"].pop("id")
+                    if "id" in service_spec_item["spec"]:
+                        service_spec_item["spec"].pop("id")
+                    if "id" in service_spec_item["status"]["realized"]:
+                        service_spec_item["status"]["realized"].pop("id")
                     if service_spec_item not in service_items:
                         service_items.append(service_spec_item)
 
