@@ -2,8 +2,8 @@
 
 import pathlib
 import yaml
-from collections import namedtuple
 from microservices_yaml_handler.dockerfile_handler import DockerfileHandler
+from utils import utils
 
 
 class MicroservicesYamlHandler:
@@ -12,12 +12,8 @@ class MicroservicesYamlHandler:
                         "Role", "ClusterRole", "RoleBinding", "ClusterRoleBinding", "Secret", "PersistentVolume",
                         "Ingress")
     needed_yaml_spec = ("containers", "initContainers", "volumes", "volumeMounts", "persistentVolumeClaim")
-    ScoreTypes = namedtuple("ScoreTypes",
-                            ["global_score", "container_score", "security_context_score",
-                             "access_score", "pod_score", "volume_score"])
-    score_types = ScoreTypes(global_score="globalScore", container_score="containerScore",
-                             security_context_score="securityContextScore", access_score="accessScore",
-                             pod_score="podScore", volume_score="volumeScore")
+    score_types = utils.score_types
+    accessible_item = []
 
     def __init__(self, microservices_name: str, exclusions_list: list, force=False):
         self.microservices_name = microservices_name
@@ -155,6 +151,7 @@ class MicroservicesYamlHandler:
         for yaml_content in self.microservices_yaml_contents:
             if yaml_content["kind"] == accessibility_kind:
                 yaml_content[self.score_types.access_score] = 100
+                self.accessible_item.append(yaml_content)
                 continue
             if yaml_content is None:
                 continue
@@ -164,6 +161,7 @@ class MicroservicesYamlHandler:
                 continue
             if yaml_content["spec"]["type"] in accessibility_rules:
                 yaml_content[self.score_types.access_score] = 100
+                self.accessible_item.append(yaml_content)
                 continue
 
     def enrich_pod(self):
@@ -251,3 +249,36 @@ class MicroservicesYamlHandler:
                     container_infos.append(yaml_content["spec"]["template"]["spec"]["initContainers"])
 
         return container_infos
+
+    def get_accessible_item_name_list(self) -> list:
+        accessible_item_name_set = set()
+        for item in self.accessible_item:
+            if item["kind"] == "Service":
+                accessible_item_name_set.add(item["metadata"]["labels"]["app"])
+
+        return list(accessible_item_name_set)
+
+    def get_pod_score(self, pod_name: str, score_type: str) -> int:
+        score = -1
+        for yaml_content in self.microservices_yaml_contents:
+            if yaml_content is None:
+                continue
+            if yaml_content["kind"] != "Deployment":
+                continue
+            if "spec" not in yaml_content:
+                continue
+            if "template" not in yaml_content["spec"]:
+                continue
+            if "spec" not in yaml_content["spec"]["template"]:
+                continue
+            if yaml_content["metadata"]["name"] in pod_name:
+                if score_type == utils.score_types.access_score:
+                    accessible_item_name = self.get_accessible_item_name_list()
+                    for item in accessible_item_name:
+                        if item in pod_name:
+                            if yaml_content[score_type] < 100:
+                                yaml_content[score_type] = 100
+                if yaml_content[score_type] > score:
+                    score = yaml_content[score_type]
+
+        return score
