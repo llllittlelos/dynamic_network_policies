@@ -72,19 +72,21 @@ if __name__ == '__main__':
     force = False
     pic_output = False
     html_output = False
-    test_yaml_output = False
+    test_yaml_output = True
 
     microservice_name: str = microservices[0]
     microservice_namespace = microservice_name
     check_create_directory(microservice_name)
 
     cilium_client = CiliumClient(microservice_name, force)
+    print("cilium client initialized.")
 
     microservices_yaml_handler = MicroservicesYamlHandler(microservice_name, exclusions[microservice_name], force)
     microservices_yaml_handler.enrich_containers()
     microservices_yaml_handler.enrich_services()
     microservices_yaml_handler.enrich_pod()
     microservices_yaml_handler.calculate_global_score()
+    print("microservices yaml handler initialized.")
 
     raw_services_inner_ip_list = []
     for service_item in cilium_client.get_service_items_by_namespace(microservice_namespace):
@@ -129,6 +131,7 @@ if __name__ == '__main__':
     # node是图论定义的节点，不是K8S的概念
     # 这个方法必须执行，因为涉及到边的权重的计算
     initial_node, paths = microservices_topology.get_initial_node_and_shortest_path()
+    print("microservices topology initialized.")
 
     if pic_output:
         microservices_topology.generate_simple_picture()

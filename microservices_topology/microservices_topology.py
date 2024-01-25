@@ -61,6 +61,7 @@ class MicroservicesTopology:
                 self.initial_node_shortest_paths = self.get_shortest_path_by_node(pod)
                 return pod, self.initial_node_shortest_paths
 
+    # TODO: 这个图随便画的，需要美化
     def generate_simple_picture(self):
         pos = nx.spring_layout(self.graph)
         nx.draw(self.graph, pos, with_labels=True, node_color='skyblue', edge_color='black', node_size=2000,
@@ -72,6 +73,7 @@ class MicroservicesTopology:
 
         plt.show()
 
+    # TODO: 这个图随便画的，需要美化
     def draw_graph_with_pyecharts(self):
         nodes = [{"name": node, "symbolSize": 10} for node in self.graph.nodes()]
         links = []
