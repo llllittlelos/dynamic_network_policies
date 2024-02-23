@@ -5,42 +5,39 @@ import yaml
 from cilium_client import CiliumClient
 from microservices_yaml_handler import MicroservicesYamlHandler
 from microservices_topology import MicroservicesTopology
+from network_policies_generator import NetworkPoliciesGenerator
 from utils import utils
 
 microservices = ("bookinfo", "online boutique", "sock shop")
 # 不同微服务的YAML文件的排除项，即不需要进行处理的YAML文件
 exclusions = {"bookinfo": ["bookinfo-psa.yaml", "bookinfo-dualstack.yaml"]}
 
+current_directory = pathlib.Path(__file__).parent.resolve()
+output_directory = current_directory / "output"
 
-def check_create_directory(_microservice_name):
-    current_directory = pathlib.Path(__file__).parent.resolve()
-    output_directory = current_directory / "output"
-    microservice_output_directory = output_directory / _microservice_name
-    cilium_client_directory = microservice_output_directory / "cilium_client"
 
-    if not output_directory.exists():
+def create_path_if_not_exists(_path):
+    if not _path.exists():
         try:
-            output_directory.mkdir(parents=True, exist_ok=True)
+            _path.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             print(f"error creating output directory: {e}")
 
-    if not microservice_output_directory.exists():
-        try:
-            microservice_output_directory.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            print(f"error creating microservice output directory: {e}")
 
-    if not cilium_client_directory.exists():
-        try:
-            cilium_client_directory.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            print(f"error creating cilium_client directory: {e}")
+def check_create_directory(_microservice_name):
+    microservice_output_directory = output_directory / _microservice_name
+    cilium_client_directory = microservice_output_directory / "cilium_client"
+    network_policies_directory = microservice_output_directory / "network_policies"
+
+    create_path_if_not_exists(output_directory)
+    create_path_if_not_exists(microservice_output_directory)
+    create_path_if_not_exists(cilium_client_directory)
+    create_path_if_not_exists(network_policies_directory)
 
 
 def output_for_test(test_microservices_yaml_handler, test_cilium_client, remove_test_output=False):
-    current_directory = pathlib.Path(__file__).parent.resolve()
-    output_directory = current_directory / "output"
     test_directory = output_directory / test_microservices_yaml_handler.microservices_name / "test"
+    create_path_if_not_exists(test_directory)
 
     if remove_test_output:
         try:
@@ -49,23 +46,15 @@ def output_for_test(test_microservices_yaml_handler, test_cilium_client, remove_
             print(f"directory {test_directory} removed successfully.")
         except OSError as e:
             print(f"error: {e}")
-
-        return
-
-    if not test_directory.exists():
-        try:
-            test_directory.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            print(f"error creating output directory: {e}")
-
-    with open(test_directory / "yaml_result.yaml", "w") as file:
-        yaml.dump(test_microservices_yaml_handler.microservices_yaml_contents, file, default_flow_style=False)
-    with open(test_directory / "services_result.yaml", "w") as file:
-        yaml.dump(test_cilium_client.get_service_items_by_namespace(microservice_namespace),
-                  file, default_flow_style=False)
-    with open(test_directory / "endpoints_result.yaml", "w") as file:
-        yaml.dump(test_cilium_client.get_endpoint_items_by_namespace(microservice_namespace),
-                  file, default_flow_style=False)
+    else:
+        with open(test_directory / "yaml_result.yaml", "w") as file:
+            yaml.dump(test_microservices_yaml_handler.microservices_yaml_contents, file, default_flow_style=False)
+        with open(test_directory / "services_result.yaml", "w") as file:
+            yaml.dump(test_cilium_client.get_service_items_by_namespace(microservice_namespace),
+                      file, default_flow_style=False)
+        with open(test_directory / "endpoints_result.yaml", "w") as file:
+            yaml.dump(test_cilium_client.get_endpoint_items_by_namespace(microservice_namespace),
+                      file, default_flow_style=False)
 
 
 if __name__ == '__main__':
@@ -132,6 +121,10 @@ if __name__ == '__main__':
     # 这个方法必须执行，因为涉及到边的权重的计算
     initial_node, paths = microservices_topology.get_initial_node_and_shortest_path()
     print("microservices topology initialized.")
+
+    network_policies_generator = NetworkPoliciesGenerator(microservice_name, data_for_graph)
+    network_policies_generator.write_policies_to_yaml_file()
+    print("network policies generated.")
 
     if pic_output:
         microservices_topology.generate_simple_picture()
