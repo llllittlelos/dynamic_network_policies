@@ -55,6 +55,14 @@ class NetworkPoliciesGenerator:
         label_info = label_str.split(":")[-1]
         return {label_info.split("=")[0]: label_info.split("=")[1]}
 
+    # TODO: hubble获取网络流量信息，生成具体L3/L4/L7网络策略
+    # 具体为：获取json格式输出，过滤出符合前一个模块提取的微服务组件，根据流量信息生成L3/L4网络策略，根据应用层协议信息生成L7网络策略
+    def get_hubble_data(self):
+        pass
+    
+    def generate_network_policies(self):
+        pass
+
     def write_policies_to_yaml_file(self):
         for l3_l4_network_policy in self.l3_l4_network_policies:
             filename = (self.network_policies_path / (l3_l4_network_policy["metadata"]["name"] + ".yaml"))

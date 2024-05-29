@@ -58,6 +58,7 @@ def output_for_test(test_microservices_yaml_handler, test_cilium_client, remove_
 
 
 if __name__ == '__main__':
+    # force代表是否读取本地缓存，如果为True则不读取缓存，强制重新获取数据
     force = False
     pic_output = False
     html_output = False
@@ -109,6 +110,8 @@ if __name__ == '__main__':
             = microservices_yaml_handler.get_pod_score(pod_name, utils.score_types.global_score)
         data_for_graph[pod_name][utils.score_types.access_score] \
             = microservices_yaml_handler.get_pod_score(pod_name, utils.score_types.access_score)
+        for score_type in utils.score_types:
+            data_for_graph[pod_name][score_type] = microservices_yaml_handler.get_pod_score(pod_name, score_type)
         data_for_graph[pod_name]["containers"] = pod_container_image_name_list
         data_for_graph[pod_name]["containerInfos"] = container_info_list
         data_for_graph[pod_name]["endpointInfos"] = endpoint_item
